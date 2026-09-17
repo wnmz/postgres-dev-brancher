@@ -1,0 +1,30 @@
+#!/bin/bash
+set -euo pipefail
+source /usr/local/lib/pgbranch/_common.sh
+require_root
+
+# See the NOTE in `create` - pg_ctl start must run outside the flock or the
+# long-lived postgres process leaks the lock to every future command.
+(
+  flock 9
+
+  shopt -s nullglob
+  existing=("$BRANCHES"/*/)
+  if [ "${#existing[@]}" -gt 0 ]; then
+    echo "refusing to unlock root while branches exist - delete them first (list / delete)" >&2
+    exit 1
+  fi
+
+  if is_root_locked; then
+    btrfs property set -ts "$ROOT" ro false
+  fi
+) 9>"$LOCK"
+
+if ! is_running "$ROOT"; then
+  su postgres -c "$PGBIN/pg_ctl -D $ROOT -o '-p $ROOT_PORT -c listen_addresses=*' -l $STATE/root.log -w start" >/dev/null
+fi
+
+password=${PGBRANCH_SUPERUSER_PASSWORD:-postgres}
+echo "root unlocked on port $ROOT_PORT - load data with whatever tool you like, then run 'lock' when done"
+echo "  psql -h localhost -p $ROOT_PORT -U $SUPERUSER"
+echo "  postgres://$SUPERUSER:$password@localhost:$ROOT_PORT/postgres"

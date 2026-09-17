@@ -1,0 +1,25 @@
+#!/bin/bash
+set -euo pipefail
+source /usr/local/lib/pgbranch/_common.sh
+
+require_root
+if is_root_locked; then
+  echo "root: locked"
+else
+  if is_running "$ROOT"; then
+    echo "root: unlocked, running on port $ROOT_PORT"
+  else
+    echo "root: unlocked, not running (run: unlock)"
+  fi
+fi
+echo
+
+printf "%-20s %-8s %-10s %-14s\n" "NAME" "PORT" "STATUS" "DISK(new,MB)"
+shopt -s nullglob
+for d in "$BRANCHES"/*/; do
+  name=$(basename "$d")
+  port=$(cat "$STATE/$name.port" 2>/dev/null || echo "-")
+  if is_running "$d"; then status="running"; else status="stopped"; fi
+  bytes=$(btrfs filesystem du -s --raw "$d" 2>/dev/null | tail -1 | awk '{print $2}')
+  printf "%-20s %-8s %-10s %-14s\n" "$name" "$port" "$status" "$(human_mb "${bytes:-0}")"
+done

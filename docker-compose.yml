@@ -1,0 +1,33 @@
+services:
+  pgbranch:
+    build: .
+    image: pg-dev-brancher:latest
+    container_name: pg-dev-brancher
+    restart: unless-stopped
+    privileged: true
+    environment:
+      # Superuser created by initdb the first time root boots. Used both to
+      # connect while root is unlocked and as the owner of everything
+      # cloned into every branch.
+      PGBRANCH_SUPERUSER: ${PGBRANCH_SUPERUSER:-postgres}
+      PGBRANCH_SUPERUSER_PASSWORD: ${PGBRANCH_SUPERUSER_PASSWORD:-postgres}
+      # Nominal size of the sparse btrfs loopback file. Sparse = costs
+      # nothing until written to; the real ceiling is always the host's
+      # actual free disk, not this number. Safe to leave high - see README FAQ.
+      PGBRANCH_IMG_SIZE: ${PGBRANCH_IMG_SIZE:-100G}
+      # Fixed port root is published on while unlocked (`unlock` prints the
+      # full connection string). Kept out of the branch port pool below so
+      # root never competes with a branch for a port.
+      PGBRANCH_ROOT_PORT: ${PGBRANCH_ROOT_PORT:-6999}
+      # Pool `create` allocates branch ports from, one per branch. Must be
+      # wide enough for however many branches you run at once.
+      PGBRANCH_PORT_MIN: ${PGBRANCH_PORT_MIN:-7000}
+      PGBRANCH_PORT_MAX: ${PGBRANCH_PORT_MAX:-7050}
+    ports:
+      - "${PGBRANCH_ROOT_PORT:-6999}:${PGBRANCH_ROOT_PORT:-6999}"
+      - "${PGBRANCH_PORT_MIN:-7000}-${PGBRANCH_PORT_MAX:-7050}:${PGBRANCH_PORT_MIN:-7000}-${PGBRANCH_PORT_MAX:-7050}"
+    volumes:
+      - pgbranch_data:/var/lib/pgbranch
+
+volumes:
+  pgbranch_data:

@@ -1,0 +1,44 @@
+#!/bin/bash
+set -euo pipefail
+source /usr/local/lib/pgbranch/_common.sh
+
+name="${1:-}"
+if [ -z "$name" ]; then
+  echo "usage: create <name>" >&2
+  exit 1
+fi
+valid_name "$name" || { echo "invalid name '$name' (allowed: [a-zA-Z0-9_-]+, not 'root'/'branches')" >&2; exit 1; }
+require_root
+if ! is_root_locked; then
+  echo "root is unlocked (being written to) - lock it first so branches clone a stable result" >&2
+  exit 1
+fi
+
+dir="$BRANCHES/$name"
+
+# NOTE: the lock only guards the fast, bounded work below (snapshot + port
+# bookkeeping). `pg_ctl start` runs *after* the subshell/flock exits on
+# purpose - postgres and its child processes (checkpointer, bgwriter,
+# walwriter...) inherit any fd open at fork time, so starting a long-lived
+# server while still holding fd 9 would leak the flock to that server's
+# entire process tree and deadlock every future create/delete/lock/unlock.
+(
+  flock 9
+  if [ ! -d "$dir" ]; then
+    btrfs subvolume snapshot "$ROOT" "$dir" >/dev/null
+    chown -R postgres:postgres "$dir"
+  fi
+  [ -f "$STATE/$name.port" ] || free_port > "$STATE/$name.port"
+) 9>"$LOCK"
+
+port=$(cat "$STATE/$name.port")
+
+if is_running "$dir"; then
+  echo "branch '$name' already running on port $port"
+  exit 0
+fi
+
+t0=$(date +%s%N)
+su postgres -c "$PGBIN/pg_ctl -D $dir -o '-p $port -c listen_addresses=*' -l $STATE/$name.log -w start" >/dev/null
+t1=$(date +%s%N)
+echo "created branch '$name' on port $port ($(( (t1 - t0) / 1000000 ))ms)"

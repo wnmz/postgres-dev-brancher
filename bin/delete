@@ -1,0 +1,18 @@
+#!/bin/bash
+set -euo pipefail
+source /usr/local/lib/pgbranch/_common.sh
+
+name="${1:-}"
+[ -n "$name" ] || { echo "usage: delete <name>" >&2; exit 1; }
+dir="$BRANCHES/$name"
+[ -d "$dir" ] || { echo "no such branch '$name'" >&2; exit 1; }
+
+(
+  flock 9
+  if is_running "$dir"; then
+    su postgres -c "$PGBIN/pg_ctl -D $dir -m fast -w stop" >/dev/null
+  fi
+  btrfs subvolume delete "$dir" >/dev/null
+  rm -f "$STATE/$name.port" "$STATE/$name.log"
+  echo "deleted branch '$name'"
+) 9>"$LOCK"

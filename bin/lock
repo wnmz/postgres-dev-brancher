@@ -1,0 +1,17 @@
+#!/bin/bash
+set -euo pipefail
+source /usr/local/lib/pgbranch/_common.sh
+require_root
+
+(
+  flock 9
+  if is_root_locked; then
+    echo "root already locked"
+    exit 0
+  fi
+  if is_running "$ROOT"; then
+    su postgres -c "$PGBIN/pg_ctl -D $ROOT -m fast -w stop" >/dev/null
+  fi
+  btrfs property set -ts "$ROOT" ro true
+  echo "root locked"
+) 9>"$LOCK"
